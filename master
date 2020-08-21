@@ -1,0 +1,95 @@
+#include <HttpClient.h>
+#include "PietteTech_DHT.h" 
+#define DHTTYPE  DHT22       
+#define DHTPIN   D4          
+
+PietteTech_DHT DHT(DHTPIN, DHTTYPE);
+int n;
+unsigned int nextTime = 0;
+HttpClient http;
+http_header_t headers[] = {
+    //  { "Content-Type", "application/json" },
+    //  { "Accept" , "application/json" },
+    { "Accept" , "*/*"},
+    { NULL, NULL } // NOTE: Always terminate headers will NULL
+};
+
+http_request_t request;
+http_response_t response;
+void setup()
+{
+  Particle.publish("DEBUG", "Initialising");
+  delay(5s); //Wait for DHT22 to take first measurement, should be less than 5s
+  DHT.begin();
+}
+
+void loop()
+{
+  int result = DHT.acquireAndWait(1000); // wait up to 1 sec (default indefinitely)
+
+  switch (result) {
+  case DHTLIB_OK:
+    break;
+  case DHTLIB_ERROR_CHECKSUM:
+    Particle.publish("DEBUG", "Error\n\r\tChecksum error");
+    break;
+  case DHTLIB_ERROR_ISR_TIMEOUT:
+    Particle.publish("DEBUG", "Error\n\r\tISR time out error");
+    break;
+  case DHTLIB_ERROR_RESPONSE_TIMEOUT:
+    Particle.publish("DEBUG", "Error\n\r\tResponse time out error");
+    break;
+  case DHTLIB_ERROR_DATA_TIMEOUT:
+    Particle.publish("DEBUG", "Error\n\r\tData time out error");
+    break;
+  case DHTLIB_ERROR_ACQUIRING:
+    Particle.publish("DEBUG", "Error\n\r\tAcquiring");
+    break;
+  case DHTLIB_ERROR_DELTA:
+    Particle.publish("DEBUG", "Error\n\r\tDelta time to small");
+    break;
+  case DHTLIB_ERROR_NOTSTARTED:
+    Particle.publish("DEBUG", "Error\n\r\tNot started");
+    break;
+  default:
+    Particle.publish("DEBUG", "Unknown error");
+    break;
+  }
+  float h = DHT.getHumidity();
+  float t = DHT.getCelsius();
+  //send to google cloud, optional
+  Particle.publish("temperature", String(t), PRIVATE);
+  Particle.publish("humidity", String(h)), PRIVATE;
+  Particle.publish("DEBUG", "G.Cloud Data Sent");
+  n++;
+  
+  //post to dweet
+  request.hostname = "dweet.io";
+  request.port = 80;
+  request.path = "/dweet/for/DWEETURLVARIABLE?temp=" + String(t);
+  http.get(request, response, headers);
+    //Spark.publish("DEBUG","Application Response status: ");
+    //Particle.publish("DEBUG",response.status);
+
+    //Spark.publish("DEBUG","Application HTTP Response Body: ");
+  Particle.publish("DEBUG",response.body);
+  
+  //following is used by IFTTT to turn on or off devices
+  if (t > 26){
+      Particle.publish("DEBUG", ">26");
+      Particle.publish("Temp_High", "true");
+  }
+  else {
+      Particle.publish("Debug", "<26");
+      Particle.publish("Temp_Low", "true");
+  }
+  
+  request.path = "/dweet/for/DWEETURLVARIABLE?humidity=" + String(h);
+  Particle.publish("DEBUG",response.body);  
+  http.get(request, response, headers);
+    //Spark.publish("DEBUG","Application Response status: ");
+    //Particle.publish("DEBUG",response.status);
+
+    //Spark.publish("DEBUG","Application HTTP Response Body: ");
+  delay(1min);
+}
